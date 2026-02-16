@@ -3,7 +3,9 @@ package channels
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -101,6 +103,7 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 	}
 
 	message := msg.Content
+	imageMedia := filterDiscordImageMedia(msg.Media)
 
 	// 使用传入的 ctx 进行超时控制
 	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
@@ -108,7 +111,52 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.session.ChannelMessageSend(channelID, message)
+		if len(imageMedia) == 0 {
+			_, err := c.session.ChannelMessageSend(channelID, message)
+			done <- err
+			return
+		}
+
+		sendData := &discordgo.MessageSend{Content: message}
+		openFiles := make([]*os.File, 0)
+		defer func() {
+			for _, f := range openFiles {
+				_ = f.Close()
+			}
+		}()
+
+		for _, mediaRef := range imageMedia {
+			if isDiscordHTTPURL(mediaRef) {
+				sendData.Embeds = append(sendData.Embeds, &discordgo.MessageEmbed{
+					Type:  discordgo.EmbedTypeImage,
+					Image: &discordgo.MessageEmbedImage{URL: mediaRef},
+				})
+				continue
+			}
+
+			file, err := os.Open(mediaRef)
+			if err != nil {
+				logger.WarnCF("discord", "Failed to open local image", map[string]any{
+					"path":  mediaRef,
+					"error": err.Error(),
+				})
+				sendData.Content = appendContent(sendData.Content, fmt.Sprintf("[image: %s]", mediaRef))
+				continue
+			}
+			openFiles = append(openFiles, file)
+
+			filename := filepath.Base(mediaRef)
+			if filename == "" || filename == "." {
+				filename = "image"
+			}
+
+			sendData.Files = append(sendData.Files, &discordgo.File{
+				Name:   filename,
+				Reader: file,
+			})
+		}
+
+		_, err := c.session.ChannelMessageSendComplex(channelID, sendData)
 		done <- err
 	}()
 
@@ -121,6 +169,40 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 	case <-sendCtx.Done():
 		return fmt.Errorf("send message timeout: %w", sendCtx.Err())
 	}
+}
+
+func isDiscordHTTPURL(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+func isDiscordImageMedia(mediaRef string) bool {
+	reference := strings.TrimSpace(mediaRef)
+	if reference == "" {
+		return false
+	}
+
+	lower := strings.ToLower(reference)
+	if strings.Contains(lower, "?") {
+		lower = lower[:strings.Index(lower, "?")]
+	}
+
+	return strings.HasSuffix(lower, ".jpg") ||
+		strings.HasSuffix(lower, ".jpeg") ||
+		strings.HasSuffix(lower, ".png") ||
+		strings.HasSuffix(lower, ".webp") ||
+		strings.HasSuffix(lower, ".gif") ||
+		strings.HasSuffix(lower, ".bmp")
+}
+
+func filterDiscordImageMedia(media []string) []string {
+	out := make([]string, 0, len(media))
+	for _, mediaRef := range media {
+		if isDiscordImageMedia(mediaRef) {
+			out = append(out, mediaRef)
+		}
+	}
+	return out
 }
 
 // appendContent 安全地追加内容到现有文本

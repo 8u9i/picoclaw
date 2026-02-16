@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -137,6 +138,23 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		c.stopThinking.Delete(msg.ChatID)
 	}
 
+	imageMedia := filterTelegramImageMedia(msg.Media)
+	if len(imageMedia) > 0 {
+		if pID, ok := c.placeholders.Load(msg.ChatID); ok {
+			c.placeholders.Delete(msg.ChatID)
+			_ = c.bot.DeleteMessage(ctx, &telego.DeleteMessageParams{
+				ChatID:    tu.ID(chatID),
+				MessageID: pID.(int),
+			})
+		}
+
+		if err := c.sendImageMedia(ctx, chatID, msg.Content, imageMedia); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
 	htmlContent := markdownToTelegramHTML(msg.Content)
 
 	// Try to edit placeholder
@@ -161,6 +179,54 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		tgMsg.ParseMode = ""
 		_, err = c.bot.SendMessage(ctx, tgMsg)
 		return err
+	}
+
+	return nil
+}
+
+func (c *TelegramChannel) sendImageMedia(ctx context.Context, chatID int64, content string, media []string) error {
+	htmlCaption := markdownToTelegramHTML(content)
+
+	for i, mediaRef := range media {
+		photo := telego.InputFile{}
+		var fileHandle *os.File
+
+		if isTelegramHTTPURL(mediaRef) {
+			photo.URL = mediaRef
+		} else {
+			file, err := os.Open(mediaRef)
+			if err != nil {
+				return fmt.Errorf("open image file %q: %w", mediaRef, err)
+			}
+			fileHandle = file
+			photo.File = file
+		}
+
+		params := tu.Photo(tu.ID(chatID), photo)
+		if i == 0 && htmlCaption != "" {
+			params.Caption = htmlCaption
+			params.ParseMode = telego.ModeHTML
+		}
+
+		_, err := c.bot.SendPhoto(ctx, params)
+		if fileHandle != nil {
+			_ = fileHandle.Close()
+		}
+		if err != nil {
+			return fmt.Errorf("send telegram photo: %w", err)
+		}
+	}
+
+	// If content exists but no photo was accepted, fall back to text
+	if len(media) == 0 && content != "" {
+		tgMsg := tu.Message(tu.ID(chatID), htmlCaption)
+		tgMsg.ParseMode = telego.ModeHTML
+		_, err := c.bot.SendMessage(ctx, tgMsg)
+		if err != nil {
+			tgMsg.ParseMode = ""
+			_, err = c.bot.SendMessage(ctx, tgMsg)
+			return err
+		}
 	}
 
 	return nil
@@ -384,6 +450,47 @@ func parseChatID(chatIDStr string) (int64, error) {
 	var id int64
 	_, err := fmt.Sscanf(chatIDStr, "%d", &id)
 	return id, err
+}
+
+func isTelegramHTTPURL(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+func isTelegramImageMedia(mediaRef string) bool {
+	reference := strings.TrimSpace(mediaRef)
+	if reference == "" {
+		return false
+	}
+
+	if isTelegramHTTPURL(reference) {
+		if parsed, err := url.Parse(reference); err == nil {
+			ext := strings.ToLower(filepath.Ext(parsed.Path))
+			switch ext {
+			case ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp":
+				return true
+			}
+		}
+		return false
+	}
+
+	ext := strings.ToLower(filepath.Ext(reference))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp":
+		return true
+	default:
+		return false
+	}
+}
+
+func filterTelegramImageMedia(media []string) []string {
+	out := make([]string, 0, len(media))
+	for _, mediaRef := range media {
+		if isTelegramImageMedia(mediaRef) {
+			out = append(out, mediaRef)
+		}
+	}
+	return out
 }
 
 func markdownToTelegramHTML(text string) string {

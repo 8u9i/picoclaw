@@ -11,7 +11,7 @@ func TestMessageTool_Execute_Success(t *testing.T) {
 	tool.SetContext("test-channel", "test-chat-id")
 
 	var sentChannel, sentChatID, sentContent string
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(channel, chatID, content string, media []string) error {
 		sentChannel = channel
 		sentChatID = chatID
 		sentContent = content
@@ -63,7 +63,7 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 	tool.SetContext("default-channel", "default-chat-id")
 
 	var sentChannel, sentChatID string
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(channel, chatID, content string, media []string) error {
 		sentChannel = channel
 		sentChatID = chatID
 		return nil
@@ -99,7 +99,7 @@ func TestMessageTool_Execute_SendFailure(t *testing.T) {
 	tool.SetContext("test-channel", "test-chat-id")
 
 	sendErr := errors.New("network error")
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(channel, chatID, content string, media []string) error {
 		return sendErr
 	})
 
@@ -153,7 +153,7 @@ func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
 	tool := NewMessageTool()
 	// No SetContext called, so defaultChannel and defaultChatID are empty
 
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(channel, chatID, content string, media []string) error {
 		return nil
 	})
 
@@ -191,6 +191,32 @@ func TestMessageTool_Execute_NotConfigured(t *testing.T) {
 	}
 	if result.ForLLM != "Message sending not configured" {
 		t.Errorf("Expected ForLLM 'Message sending not configured', got '%s'", result.ForLLM)
+	}
+}
+
+func TestMessageTool_Execute_WithMedia(t *testing.T) {
+	tool := NewMessageTool()
+	tool.SetContext("whatsapp", "12345")
+
+	var sentMedia []string
+	tool.SetSendCallback(func(channel, chatID, content string, media []string) error {
+		sentMedia = media
+		return nil
+	})
+
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"content": "Here are images",
+		"media":   []interface{}{"https://example.com/a.jpg", "https://example.com/b.png"},
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %v", result.ForLLM)
+	}
+	if len(sentMedia) != 2 {
+		t.Fatalf("expected 2 media items, got %d", len(sentMedia))
+	}
+	if result.ForLLM != "Message sent to whatsapp:12345 with 2 media item(s)" {
+		t.Fatalf("unexpected status: %s", result.ForLLM)
 	}
 }
 
@@ -255,5 +281,14 @@ func TestMessageTool_Parameters(t *testing.T) {
 	}
 	if chatIDProp["type"] != "string" {
 		t.Error("Expected chat_id type to be 'string'")
+	}
+
+	// Check media property (optional)
+	mediaProp, ok := props["media"].(map[string]interface{})
+	if !ok {
+		t.Error("Expected 'media' property")
+	}
+	if mediaProp["type"] != "array" {
+		t.Error("Expected media type to be 'array'")
 	}
 }

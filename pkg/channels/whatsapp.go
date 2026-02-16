@@ -91,6 +91,9 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		"to":      msg.ChatID,
 		"content": msg.Content,
 	}
+	if len(msg.Media) > 0 {
+		payload["media"] = msg.Media
+	}
 
 	data, err := json.Marshal(payload)
 	if err != nil {

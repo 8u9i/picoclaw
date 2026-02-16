@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-type SendCallback func(channel, chatID, content string) error
+type SendCallback func(channel, chatID, content string, media []string) error
 
 type MessageTool struct {
 	sendCallback   SendCallback
@@ -23,7 +23,7 @@ func (t *MessageTool) Name() string {
 }
 
 func (t *MessageTool) Description() string {
-	return "Send a message to user on a chat channel. Use this when you want to communicate something."
+	return "Send a message to user on a chat channel, with optional media/image URLs or file paths."
 }
 
 func (t *MessageTool) Parameters() map[string]interface{} {
@@ -42,9 +42,43 @@ func (t *MessageTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Optional: target chat/user ID",
 			},
+			"media": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional: media/image URLs or file paths to send with the message",
+				"items": map[string]interface{}{
+					"type": "string",
+				},
+			},
 		},
 		"required": []string{"content"},
 	}
+}
+
+func parseMediaArg(raw interface{}) []string {
+	switch v := raw.(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, s := range v {
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case string:
+		if v != "" {
+			return []string{v}
+		}
+	}
+
+	return nil
 }
 
 func (t *MessageTool) SetContext(channel, chatID string) {
@@ -70,6 +104,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 
 	channel, _ := args["channel"].(string)
 	chatID, _ := args["chat_id"].(string)
+	media := parseMediaArg(args["media"])
 
 	if channel == "" {
 		channel = t.defaultChannel
@@ -86,7 +121,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 		return &ToolResult{ForLLM: "Message sending not configured", IsError: true}
 	}
 
-	if err := t.sendCallback(channel, chatID, content); err != nil {
+	if err := t.sendCallback(channel, chatID, content, media); err != nil {
 		return &ToolResult{
 			ForLLM:  fmt.Sprintf("sending message: %v", err),
 			IsError: true,
@@ -95,9 +130,12 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 	}
 
 	t.sentInRound = true
-	// Silent: user already received the message directly
-	return &ToolResult{
-		ForLLM: fmt.Sprintf("Message sent to %s:%s", channel, chatID),
-		Silent: true,
+
+	status := fmt.Sprintf("Message sent to %s:%s", channel, chatID)
+	if len(media) > 0 {
+		status = fmt.Sprintf("%s with %d media item(s)", status, len(media))
 	}
+
+	// Silent: user already received the message directly
+	return &ToolResult{ForLLM: status, Silent: true}
 }
