@@ -187,11 +187,15 @@ This repo includes a Railway-ready template with `Dockerfile`, `railway.toml`, a
 
 - At least one provider API key, e.g. `PICOCLAW_PROVIDERS_OPENROUTER_API_KEY`
 - If you want chat integration, enable at least one channel and set its credentials (e.g. `PICOCLAW_CHANNELS_TELEGRAM_ENABLED=true` and `PICOCLAW_CHANNELS_TELEGRAM_TOKEN=...`)
+- Attach a Railway Volume (recommended mount path: `/data`)
 
 ### Notes
 
 - `PORT` from Railway is auto-mapped at container startup.
-- If `~/.picoclaw/config.json` is missing, startup will auto-run `picoclaw onboard`.
+- Startup now auto-detects Railway volume mount (`RAILWAY_VOLUME_MOUNT_PATH` or `/data`) and stores state under `PICOCLAW_HOME`.
+- If `PICOCLAW_AGENTS_DEFAULTS_WORKSPACE` is unset, it defaults to `${PICOCLAW_HOME}/workspace`.
+- If `${PICOCLAW_HOME}/config.json` is missing, startup will auto-run `picoclaw onboard`.
+- Workspace directory is created automatically at startup.
 - Environment variables override config fields, so secrets can be managed entirely in Railway.
 - Set `PICOCLAW_GATEWAY_HOST=0.0.0.0` exactly (do not append notes or extra text in variable values).
 - If no channel is enabled, gateway runs idle (expected). Enable one channel to receive messages.

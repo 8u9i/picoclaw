@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -35,8 +36,27 @@ func (c *AuthCredential) NeedsRefresh() bool {
 }
 
 func authFilePath() string {
-	home, _ := os.UserHomeDir()
+	if envHome := strings.TrimSpace(os.Getenv("PICOCLAW_HOME")); envHome != "" {
+		if strings.HasPrefix(envHome, "~") {
+			home := homeDir()
+			if len(envHome) > 1 && envHome[1] == '/' {
+				return filepath.Join(filepath.Clean(home+envHome[1:]), "auth.json")
+			}
+			return filepath.Join(home, "auth.json")
+		}
+		return filepath.Join(filepath.Clean(envHome), "auth.json")
+	}
+
+	home := homeDir()
 	return filepath.Join(home, ".picoclaw", "auth.json")
+}
+
+func homeDir() string {
+	if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
+		return home
+	}
+	home, _ := os.UserHomeDir()
+	return home
 }
 
 func LoadStore() (*AuthStore, error) {

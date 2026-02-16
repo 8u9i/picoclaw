@@ -400,6 +400,11 @@ func agentCmd() {
 		os.Exit(1)
 	}
 
+	if err := os.MkdirAll(cfg.WorkspacePath(), 0755); err != nil {
+		fmt.Printf("Error ensuring workspace path: %v\n", err)
+		os.Exit(1)
+	}
+
 	provider, err := providers.CreateProvider(cfg)
 	if err != nil {
 		fmt.Printf("Error creating provider: %v\n", err)
@@ -532,6 +537,11 @@ func gatewayCmd() {
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := os.MkdirAll(cfg.WorkspacePath(), 0755); err != nil {
+		fmt.Printf("Error ensuring workspace path: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -1012,8 +1022,22 @@ func authStatusCmd() {
 }
 
 func getConfigPath() string {
+	return filepath.Join(getPicoClawHome(), "config.json")
+}
+
+func getPicoClawHome() string {
+	if envHome := strings.TrimSpace(os.Getenv("PICOCLAW_HOME")); envHome != "" {
+		if strings.HasPrefix(envHome, "~") {
+			home, _ := os.UserHomeDir()
+			if len(envHome) > 1 && envHome[1] == '/' {
+				return filepath.Clean(home + envHome[1:])
+			}
+			return home
+		}
+		return filepath.Clean(envHome)
+	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "config.json")
+	return filepath.Join(home, ".picoclaw")
 }
 
 func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string) *cron.CronService {

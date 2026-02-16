@@ -7,7 +7,22 @@ if [ -n "${PORT:-}" ]; then
 	export PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT="${PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT:-$PORT}"
 fi
 
-CONFIG_PATH="${HOME:-/root}/.picoclaw/config.json"
+if [ -n "${PICOCLAW_HOME:-}" ]; then
+	PICOCLAW_HOME_PATH="$PICOCLAW_HOME"
+elif [ -n "${RAILWAY_VOLUME_MOUNT_PATH:-}" ]; then
+	PICOCLAW_HOME_PATH="${RAILWAY_VOLUME_MOUNT_PATH}/.picoclaw"
+elif [ -n "${RAILWAY_ENVIRONMENT:-}" ] && [ -d "/data" ]; then
+	PICOCLAW_HOME_PATH="/data/.picoclaw"
+else
+	PICOCLAW_HOME_PATH="${HOME:-/root}/.picoclaw"
+fi
+
+export PICOCLAW_HOME="$PICOCLAW_HOME_PATH"
+export PICOCLAW_AGENTS_DEFAULTS_WORKSPACE="${PICOCLAW_AGENTS_DEFAULTS_WORKSPACE:-${PICOCLAW_HOME_PATH}/workspace}"
+
+mkdir -p "$PICOCLAW_HOME_PATH" "$PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"
+
+CONFIG_PATH="${PICOCLAW_HOME_PATH}/config.json"
 if [ ! -f "$CONFIG_PATH" ]; then
 	picoclaw onboard >/dev/null
 fi

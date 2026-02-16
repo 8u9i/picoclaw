@@ -22,6 +22,20 @@ type ContextBuilder struct {
 }
 
 func getGlobalConfigDir() string {
+	if envHome := strings.TrimSpace(os.Getenv("PICOCLAW_HOME")); envHome != "" {
+		if strings.HasPrefix(envHome, "~") {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return ""
+			}
+			if len(envHome) > 1 && envHome[1] == '/' {
+				return filepath.Clean(home + envHome[1:])
+			}
+			return home
+		}
+		return filepath.Clean(envHome)
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""

@@ -3,6 +3,7 @@ package auth
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -54,6 +55,7 @@ func TestStoreRoundtrip(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("PICOCLAW_HOME", "")
 	defer os.Setenv("HOME", origHome)
 
 	cred := &AuthCredential{
@@ -88,9 +90,14 @@ func TestStoreRoundtrip(t *testing.T) {
 }
 
 func TestStoreFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not preserve Unix-style 0600 permission bits")
+	}
+
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("PICOCLAW_HOME", "")
 	defer os.Setenv("HOME", origHome)
 
 	cred := &AuthCredential{
@@ -117,6 +124,7 @@ func TestStoreMultiProvider(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("PICOCLAW_HOME", "")
 	defer os.Setenv("HOME", origHome)
 
 	openaiCred := &AuthCredential{AccessToken: "openai-token", Provider: "openai", AuthMethod: "oauth"}
@@ -150,6 +158,7 @@ func TestDeleteCredential(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("PICOCLAW_HOME", "")
 	defer os.Setenv("HOME", origHome)
 
 	cred := &AuthCredential{AccessToken: "to-delete", Provider: "openai", AuthMethod: "oauth"}
@@ -174,6 +183,7 @@ func TestLoadStoreEmpty(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("PICOCLAW_HOME", "")
 	defer os.Setenv("HOME", origHome)
 
 	store, err := LoadStore()
